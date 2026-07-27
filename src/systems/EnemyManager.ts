@@ -38,7 +38,11 @@ export class EnemyManager {
       const distance = Phaser.Math.Distance.Between(sprite.x, sprite.y, playerX, playerY);
 
       if (distance < this.CHASE_RANGE) {
-        this.scene.physics.moveToObject(sprite, { x: playerX, y: playerY }, this.ENEMY_SPEED);
+        const angle = Math.atan2(playerY - sprite.y, playerX - sprite.x);
+        body.setVelocity(
+          Math.cos(angle) * this.ENEMY_SPEED,
+          Math.sin(angle) * this.ENEMY_SPEED
+        );
       } else {
         body.setVelocity(0);
       }

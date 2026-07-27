@@ -27,7 +27,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    console.log('GameScene: create()');
     this.character = createCharacter('勇者', 'warrior');
+
+    this.add.text(400, 300, '游戏加载中...', {
+      font: '24px monospace',
+      color: '#ffffff',
+    }).setOrigin(0.5);
 
     this.walls = this.physics.add.staticGroup();
     this.createWalls();

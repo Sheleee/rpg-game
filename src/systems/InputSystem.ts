@@ -7,23 +7,26 @@ export interface MovementInput {
 }
 
 export class InputSystem {
-  private cursors: Phaser.Types.Input.Keyboard.CursorKeys;
-  private wasd: { [key: string]: Phaser.Input.Keyboard.Key };
+  private cursors: Phaser.Types.Input.Keyboard.CursorKeys | null = null;
+  private wasd: { [key: string]: Phaser.Input.Keyboard.Key } | null = null;
   private attackCallbacks: (() => void)[] = [];
   private joystickState: JoystickState = { x: 0, y: 0, isActive: false };
+  private hasKeyboard: boolean;
 
   constructor(scene: Phaser.Scene) {
-    this.cursors = scene.input.keyboard!.createCursorKeys();
-    this.wasd = {
-      up: scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-      down: scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      left: scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-      right: scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-    };
-
-    scene.input.keyboard!.on('keydown-SPACE', () => {
-      for (const cb of this.attackCallbacks) cb();
-    });
+    this.hasKeyboard = scene.input.keyboard !== null;
+    if (this.hasKeyboard) {
+      this.cursors = scene.input.keyboard!.createCursorKeys();
+      this.wasd = {
+        up: scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+        down: scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+        left: scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+        right: scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+      };
+      scene.input.keyboard!.on('keydown-SPACE', () => {
+        for (const cb of this.attackCallbacks) cb();
+      });
+    }
   }
 
   setJoystickState(state: JoystickState): void {
@@ -39,16 +42,17 @@ export class InputSystem {
       return input;
     }
 
-    if (this.cursors.left.isDown || this.wasd.left.isDown) {
-      input.moveX = -1;
-    } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
-      input.moveX = 1;
-    }
-
-    if (this.cursors.up.isDown || this.wasd.up.isDown) {
-      input.moveY = -1;
-    } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
-      input.moveY = 1;
+    if (this.hasKeyboard && this.cursors && this.wasd) {
+      if (this.cursors.left.isDown || this.wasd.left.isDown) {
+        input.moveX = -1;
+      } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
+        input.moveX = 1;
+      }
+      if (this.cursors.up.isDown || this.wasd.up.isDown) {
+        input.moveY = -1;
+      } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
+        input.moveY = 1;
+      }
     }
 
     return input;
