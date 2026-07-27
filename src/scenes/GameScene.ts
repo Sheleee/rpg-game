@@ -5,6 +5,8 @@ import { HUDScene } from './HUDScene';
 import { InputSystem } from '../systems/InputSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { EnemyManager } from '../systems/EnemyManager';
+import { VirtualJoystick } from '../ui/VirtualJoystick';
+import { AttackButton } from '../ui/AttackButton';
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
@@ -14,6 +16,8 @@ export class GameScene extends Phaser.Scene {
   private inputSystem!: InputSystem;
   private combatSystem!: CombatSystem;
   private enemyManager!: EnemyManager;
+  private joystick!: VirtualJoystick;
+  private attackButton!: AttackButton;
 
   private lastHitTime = 0;
   private readonly PLAYER_SPEED = 160;
@@ -48,6 +52,8 @@ export class GameScene extends Phaser.Scene {
     this.updateHUD();
 
     this.inputSystem.onAttack(() => this.handleAttack());
+    this.joystick = new VirtualJoystick(this, 120, 500, 55, 24);
+    this.attackButton = new AttackButton(this, 680, 500, 35, () => this.inputSystem.triggerAttack());
 
     this.input.keyboard!.on('keydown-ESC', () => {
       saveGame(this.character);
@@ -56,6 +62,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(): void {
+    this.inputSystem.setJoystickState(this.joystick.getState());
     this.handleMovement();
     this.enemyManager.update(this.player.x, this.player.y);
   }
