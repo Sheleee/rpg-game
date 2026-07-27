@@ -1,4 +1,4 @@
-import { Stats, createStats, addStats } from './Stats';
+import { Stats, STAT_KEYS, addStats } from './Stats';
 
 export type EquipmentSlot = 'weapon' | 'helmet' | 'armor' | 'accessory1' | 'accessory2';
 
@@ -27,6 +27,7 @@ export const RARITY_MULTIPLIER: Record<ItemRarity, number> = {
   legendary: 3.0,
 };
 
+// 零值种子，用于属性累加
 const ZERO_STATS: Stats = {
   hp: 0, mp: 0, attack: 0, defense: 0, speed: 0, critRate: 0, critDamage: 0,
 };
@@ -34,20 +35,20 @@ const ZERO_STATS: Stats = {
 export function getEquipmentStats(equipment: Equipment): Stats {
   const multiplier = RARITY_MULTIPLIER[equipment.rarity];
 
-  // Apply base stats
+  // 应用基础属性（含品质倍率）
   const baseWithMultiplier: Partial<Stats> = {};
-  for (const [key, value] of Object.entries(equipment.baseStats)) {
+  for (const key of STAT_KEYS) {
+    const value = equipment.baseStats[key];
     if (value !== undefined) {
-      (baseWithMultiplier as Record<string, number>)[key] = value * multiplier;
+      baseWithMultiplier[key] = value * multiplier;
     }
   }
   const withBase = addStats(ZERO_STATS, baseWithMultiplier);
 
-  // Apply affixes
+  // 应用随机词条
   const affixBonus: Partial<Stats> = {};
   for (const affix of equipment.affixes) {
-    (affixBonus as Record<string, number>)[affix.stat] =
-      ((affixBonus as Record<string, number>)[affix.stat] ?? 0) + affix.value;
+    affixBonus[affix.stat] = (affixBonus[affix.stat] ?? 0) + affix.value;
   }
 
   return addStats(withBase, affixBonus);

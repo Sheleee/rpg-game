@@ -93,10 +93,11 @@ describe('Character', () => {
     it('should deal damage to defender', () => {
       const attacker = createCharacter('Hero', 'warrior');
       const defender = createCharacter('Enemy', 'warrior');
+      const defenderStats = getCharacterStats(defender);
 
-      const { result, updatedDefender } = characterAttack(attacker, defender);
+      const { result, newHp } = characterAttack(attacker, defender.currentHp, defenderStats.defense);
       expect(result.damage).toBeGreaterThan(0);
-      expect(updatedDefender.currentHp).toBeLessThan(defender.currentHp);
+      expect(newHp).toBeLessThan(defender.currentHp);
     });
   });
 

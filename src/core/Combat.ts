@@ -7,27 +7,34 @@ export interface CombatResult {
 }
 
 export function calculateDamage(attacker: Stats, defender: Stats): CombatResult {
-  // Base damage = attack - defense (minimum 1)
   const baseDamage = Math.max(1, attacker.attack - defender.defense);
 
-  // Critical hit check
   const isCrit = Math.random() < attacker.critRate;
   const critMultiplier = isCrit ? attacker.critDamage : 1;
 
-  // Final damage
   const damage = Math.floor(baseDamage * critMultiplier);
 
   return {
     damage,
     isCrit,
-    isDead: false, // Will be determined by the caller
+    isDead: false,
   };
 }
 
 export function applyDamage(currentHp: number, damage: number): { hp: number; isDead: boolean } {
   const hp = Math.max(0, currentHp - damage);
-  return {
-    hp,
-    isDead: hp <= 0,
-  };
+  return { hp, isDead: hp <= 0 };
+}
+
+// 统一伤害计算：攻击方属性 → 目标当前HP → 新HP + 结果
+export function dealDamage(attackerStats: Stats, targetCurrentHp: number, targetDefense: number): {
+  damage: number;
+  isCrit: boolean;
+  newHp: number;
+  isDead: boolean;
+} {
+  const fakeDefender: Stats = { hp: targetCurrentHp, mp: 0, attack: 0, defense: targetDefense, speed: 0, critRate: 0, critDamage: 1 };
+  const result = calculateDamage(attackerStats, fakeDefender);
+  const { hp: newHp, isDead } = applyDamage(targetCurrentHp, result.damage);
+  return { damage: result.damage, isCrit: result.isCrit, newHp, isDead };
 }

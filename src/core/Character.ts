@@ -1,5 +1,5 @@
 import { Stats, createStats, addStats } from './Stats';
-import { Equipment, EquipmentSlot, calculateTotalStats, getEquipmentStats } from './Equipment';
+import { Equipment, EquipmentSlot, calculateTotalStats } from './Equipment';
 import { calculateDamage, applyDamage, CombatResult } from './Combat';
 
 export type ClassType = 'warrior' | 'mage' | 'thief';
@@ -73,50 +73,33 @@ export function createCharacter(name: string, classType: ClassType): Character {
 export function getCharacterStats(character: Character): Stats {
   const characterClass = CHARACTER_CLASSES[character.classType];
   const baseStats = createStats(characterClass.baseStats);
-
-  // Get all equipped items
   const equippedItems = Object.values(character.equipments).filter(Boolean) as Equipment[];
-
-  // Calculate equipment stats
   const equipmentStats = calculateTotalStats(equippedItems);
-
-  // Add base + equipment stats
   return addStats(baseStats, equipmentStats);
 }
 
 export function equipItem(character: Character, equipment: Equipment): Character {
   return {
     ...character,
-    equipments: {
-      ...character.equipments,
-      [equipment.slot]: equipment,
-    },
+    equipments: { ...character.equipments, [equipment.slot]: equipment },
   };
 }
 
 export function unequipItem(character: Character, slot: EquipmentSlot): Character {
   const newEquipments = { ...character.equipments };
   delete newEquipments[slot];
-  return {
-    ...character,
-    equipments: newEquipments,
-  };
+  return { ...character, equipments: newEquipments };
 }
 
-export function characterAttack(attacker: Character, defender: Character): {
+export function characterAttack(attacker: Character, defenderCurrentHp: number, defenderDefense: number): {
   result: CombatResult;
-  updatedDefender: Character;
+  newHp: number;
 } {
   const attackerStats = getCharacterStats(attacker);
-  const defenderStats = getCharacterStats(defender);
-
-  const result = calculateDamage(attackerStats, defenderStats);
-  const { hp: newHp, isDead } = applyDamage(defender.currentHp, result.damage);
-
-  return {
-    result: { ...result, isDead },
-    updatedDefender: { ...defender, currentHp: newHp },
-  };
+  const fakeDefender: Stats = { hp: defenderCurrentHp, mp: 0, attack: 0, defense: defenderDefense, speed: 0, critRate: 0, critDamage: 1 };
+  const result = calculateDamage(attackerStats, fakeDefender);
+  const { hp: newHp, isDead } = applyDamage(defenderCurrentHp, result.damage);
+  return { result: { ...result, isDead }, newHp };
 }
 
 export function gainExp(character: Character, amount: number): {
@@ -127,7 +110,6 @@ export function gainExp(character: Character, amount: number): {
   let newLevel = character.level;
   let leveledUp = false;
 
-  // Simple level up: 100 exp per level
   while (newExp >= 100) {
     newExp -= 100;
     newLevel++;
