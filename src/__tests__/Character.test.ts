@@ -6,6 +6,8 @@ import {
   unequipItem,
   characterAttack,
   gainExp,
+  applyJobChange,
+  addGold,
   CHARACTER_CLASSES,
 } from '../core/Character';
 import { Equipment } from '../core/Equipment';
@@ -115,6 +117,33 @@ describe('Character', () => {
       expect(character.level).toBe(2);
       expect(character.exp).toBe(150 - (50 + 1 * 30));
       expect(leveledUp).toBe(true);
+    });
+  });
+
+  describe('applyJobChange / addGold', () => {
+    it('should apply job stat bonus', () => {
+      const char = createCharacter('Hero', 'warrior');
+      const before = getCharacterStats(char);
+      const changed = applyJobChange(char, '圣骑士');
+      expect(changed.jobName).toBe('圣骑士');
+      const after = getCharacterStats(changed);
+      // 圣骑士 statBonus: hp+50, defense+10, attack+5
+      expect(after.hp).toBe(before.hp + 50);
+      expect(after.defense).toBe(before.defense + 10);
+      expect(after.attack).toBe(before.attack + 5);
+    });
+
+    it('should not allow changing job twice', () => {
+      const char = applyJobChange(createCharacter('Hero', 'warrior'), '圣骑士');
+      const again = applyJobChange(char, '狂战士');
+      expect(again.jobName).toBe('圣骑士');
+      expect(again.jobBonus).toEqual(char.jobBonus);
+    });
+
+    it('should add and deduct gold', () => {
+      const char = createCharacter('Hero', 'warrior');
+      expect(addGold(char, 50).gold).toBe(50);
+      expect(addGold(char, -10).gold).toBe(0); // 不为负
     });
   });
 });

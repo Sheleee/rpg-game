@@ -41,6 +41,13 @@ function randomBuffs(level: number): LevelUpReward[] {
     },
   ];
 
+  // 装备类奖励（具体装备在抽取时生成）
+  const zero = { hp: 0, mp: 0, attack: 0, defense: 0, speed: 0, critRate: 0, critDamage: 0 };
+  pool.push({
+    type: 'equipment', label: '', description: '',
+    apply: () => ({ stats: zero, inventory: [] }),
+  });
+
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const count = Math.min(3, shuffled.length);
   const result: LevelUpReward[] = [];

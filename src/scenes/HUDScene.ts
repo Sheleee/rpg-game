@@ -28,6 +28,13 @@ export class HUDScene extends Phaser.Scene {
   private pendingX = 0;
   private pendingY = 0;
 
+  private goldText!: Phaser.GameObjects.Text;
+  private zoneText!: Phaser.GameObjects.Text;
+  private gold = 0;
+  private zoneName = '';
+  private dungeonLevel = 1;
+  private jobName: string | null = null;
+
   private _inventory!: InventoryPanel;
   private _levelUpUI!: LevelUpChoice;
 
@@ -65,6 +72,21 @@ export class HUDScene extends Phaser.Scene {
     this.levelText = this.add.text(MARGIN, expY + BAR_H + 4, '', {
       font: '13px monospace', color: '#ffff00',
     });
+
+    // 金币（右上角）
+    this.goldText = this.add.text(Number(this.game.config.width) - MARGIN, MARGIN, '', {
+      font: 'bold 14px monospace', color: '#ffdd44',
+    }).setOrigin(1, 0).setDepth(20);
+
+    // 区域信息（右下角）
+    this.zoneText = this.add.text(Number(this.game.config.width) - MARGIN, Number(this.game.config.height) - MARGIN, '', {
+      font: '13px monospace', color: '#88ccff',
+    }).setOrigin(1, 1).setDepth(20);
+
+    // 操作提示（左下角）
+    this.add.text(MARGIN, Number(this.game.config.height) - MARGIN, '[E]对话  [J]任务  [I]背包  [M]静音', {
+      font: '11px monospace', color: '#777777',
+    }).setOrigin(0, 1).setDepth(20);
 
     this.updateDisplay();
     this.miniMap = new MiniMap(this);
@@ -113,6 +135,18 @@ export class HUDScene extends Phaser.Scene {
     this.exp = exp;
     this.expToNext = expToNext;
     this.updateDisplay();
+  }
+
+  updateGold(gold: number): void {
+    this.gold = gold;
+    this.goldText.setText(`💰 ${gold}`);
+  }
+
+  updateZone(zoneName: string, dungeonLevel: number, jobName: string | null): void {
+    this.zoneName = zoneName;
+    this.dungeonLevel = dungeonLevel;
+    this.jobName = jobName;
+    this.zoneText.setText(`${zoneName} 第${dungeonLevel}层${jobName ? `  ·  ${jobName}` : ''}`);
   }
 
   private updateDisplay(): void {

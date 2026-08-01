@@ -190,6 +190,66 @@ const DAGGER_MAP: PixelMap = [
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
 ];
 
+// NPC（村长 / 猎人 / 游商 / 贤者通用人形，用 tint 区分）
+const NPC_MAP: PixelMap = [
+  [0,0,0,0,0,'W1','W1','W1','W1',0,0,0,0,0,0,0],
+  [0,0,0,0,'W1','W1','W1','W1','W1','W1',0,0,0,0,0,0],
+  [0,0,0,0,'SK','SK','SK','SK','SK','SK',0,0,0,0,0,0],
+  [0,0,0,0,'SK','EY','SK','SK','EY','SK',0,0,0,0,0,0],
+  [0,0,0,0,'SK','SK','SB','SB','SK','SK',0,0,0,0,0,0],
+  [0,0,0,'SB','SB','SB','SB','SB','SB','SB','SB',0,0,0,0,0],
+  [0,0,0,'AD','SB','SB','SB','SB','AD','SB',0,0,0,0,0,0],
+  [0,0,0,'SB','SB','SB','SB','SB','SB','SB',0,0,0,0,0,0],
+  [0,0,0,0,'HL','HL','HL','HL','HL','HL',0,0,0,0,0,0],
+  [0,0,0,'SB','SB','SB','SB','SB','SB','SB',0,0,0,0,0,0],
+  [0,0,0,'PA','PA','PA','PA','PA','PA','PA',0,0,0,0,0,0],
+  [0,0,0,0,'PA','PA','PA','PA','PA','PA',0,0,0,0,0,0],
+  [0,0,0,0,'BT','PA','BT','BT','PA','BT',0,0,0,0,0,0],
+  [0,0,0,0,'BT','BT','BT','BT','BT','BT',0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+];
+
+// 商人（红帽 + 绿衣）
+const MERCHANT_MAP: PixelMap = [
+  [0,0,0,0,0,'EE','EE','EE','EE',0,0,0,0,0,0,0],
+  [0,0,0,0,'EE','EE','EE','EE','EE','EE',0,0,0,0,0,0],
+  [0,0,0,0,'SK','SK','SK','SK','SK','SK',0,0,0,0,0,0],
+  [0,0,0,0,'SK','EY','SK','SK','EY','SK',0,0,0,0,0,0],
+  [0,0,0,0,'SK','SK','ES','ES','SK','SK',0,0,0,0,0,0],
+  [0,0,0,'ES','ES','ES','ES','ES','ES','ES','ES',0,0,0,0,0],
+  [0,0,0,'AD','ES','ES','ES','ES','AD','ES',0,0,0,0,0,0],
+  [0,0,0,'ES','ES','ES','ES','ES','ES','ES',0,0,0,0,0,0],
+  [0,0,0,0,'GG','GG','GG','GG','GG','GG',0,0,0,0,0,0],
+  [0,0,0,'ES','ES','ES','ES','ES','ES','ES',0,0,0,0,0,0],
+  [0,0,0,'PA','PA','PA','PA','PA','PA','PA',0,0,0,0,0,0],
+  [0,0,0,0,'PA','PA','PA','PA','PA','PA',0,0,0,0,0,0],
+  [0,0,0,0,'BT','PA','BT','BT','PA','BT',0,0,0,0,0,0],
+  [0,0,0,0,'BT','BT','BT','BT','BT','BT',0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+];
+
+// BOSS（大体型暗红魔物）
+const BOSS_MAP: PixelMap = [
+  [0,0,0,0,0,'EE','EE','EE','EE','EE','EE',0,0,0,0,0],
+  [0,0,0,0,'EE','EE','EE','EE','EE','EE','EE','EE',0,0,0,0],
+  [0,0,0,'EE','EE','ES','ES','ES','ES','ES','ES','EE','EE',0,0,0],
+  [0,0,'EE','ES','ES','ES','ES','ES','ES','ES','ES','ES','ES','EE',0,0],
+  [0,0,'EE','ES','ES','EE','EE','ES','ES','EE','EE','ES','ES','EE',0,0],
+  [0,'EE','ES','ES','EE','EY2','EY2','EE','EE','EY2','EY2','EE','ES','ES','EE',0],
+  [0,'EE','ES','ES','EE','EY2','EY2','EE','EE','EY2','EY2','EE','ES','ES','EE',0],
+  [0,'EE','ES','ES','ES','ES','ES','ES','ES','ES','ES','ES','ES','ES','EE',0],
+  [0,'EE','EB','ES','ES','ES','ES','ES','ES','ES','ES','ES','ES','EB','EE',0],
+  [0,'EE','EB','EB','ES','ES','ES','ES','ES','ES','ES','ES','EB','EB','EE',0],
+  [0,0,'EE','EB','EB','EB','EB','EB','EB','EB','EB','EB','EB','EE',0,0],
+  [0,0,'EE','EB','EB','ES','ES','EE','EE','ES','ES','EB','EB','EE',0,0],
+  [0,0,0,'EE','EB','ES','ES','EE','EE','ES','ES','EB','EE',0,0,0],
+  [0,0,0,0,'EE','EB','ES','ES','ES','ES','EB','EE',0,0,0,0],
+  [0,0,0,0,0,'EE','EB','EB','EB','EB','EE',0,0,0,0,0],
+  [0,0,0,0,0,0,'EE','EE','EE','EE',0,0,0,0,0,0],
+];
+
 function renderPixelMap(textures: Phaser.Textures.TextureManager, key: string, map: PixelMap, palette: Palette, scale: number): void {
   const srcW = map[0].length;
   const srcH = map.length;
@@ -226,6 +286,9 @@ export function generateAllTextures(scene: Phaser.Scene): void {
   renderPixelMap(textures, 'weapon_sword', SWORD_MAP, P, s);
   renderPixelMap(textures, 'weapon_staff', STAFF_MAP, P, s);
   renderPixelMap(textures, 'weapon_dagger', DAGGER_MAP, P, s);
+  renderPixelMap(textures, 'npc', NPC_MAP, P, s);
+  renderPixelMap(textures, 'merchant', MERCHANT_MAP, P, s);
+  renderPixelMap(textures, 'boss', BOSS_MAP, P, s);
 }
 
 export function generateLightTexture(scene: Phaser.Scene, key: string, radius: number): void {

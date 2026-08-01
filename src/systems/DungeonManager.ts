@@ -1,17 +1,24 @@
+import { ZoneConfig, isBossLevel } from '../core/Regions';
+import { NpcType, ZONE_NPCS } from '../data/dialogs';
+
 export const ROOM_W = 800;
 export const ROOM_H = 600;
 
-export type RoomContent = 'empty' | 'enemies' | 'chest' | 'guarded_chest';
+export type RoomContent = 'empty' | 'enemies' | 'chest' | 'guarded_chest' | 'boss';
 
 export interface RoomData {
   gridX: number;
   gridY: number;
-  type: 'start' | 'normal' | 'exit';
+  type: 'start' | 'normal' | 'exit' | 'boss';
   content: RoomContent;
   cleared: boolean;
   explored: boolean;
   enemyCount: number;
   doors: { up: boolean; down: boolean; left: boolean; right: boolean };
+  /** 该房间生成的 NPC（start 房间） */
+  npcs: NpcType[];
+  /** 宝箱是否已开启（防止反复进出刷新） */
+  chestOpened: boolean;
 }
 
 export interface Dungeon {
@@ -71,7 +78,8 @@ function neighborCount(grid: (RoomData | null)[][], x: number, y: number, gridSi
   return count;
 }
 
-export function generateDungeon(level: number): Dungeon {
+export function generateDungeon(level: number, zone: ZoneConfig): Dungeon {
+  const bossLevel = isBossLevel(level);
   const gridSize = Math.min(3 + Math.floor(level / 2), 7);
   const grid: (RoomData | null)[][] = [];
 
@@ -86,9 +94,11 @@ export function generateDungeon(level: number): Dungeon {
   const startY = Math.floor(gridSize / 2);
 
   grid[startY][startX] = {
-    gridX: startX, gridY: startY, type: 'normal', content: 'empty',
-    cleared: true, explored: false, enemyCount: 0,
+    gridX: startX, gridY: startY, type: 'start', content: 'empty',
+    cleared: true, explored: true, enemyCount: 0,
     doors: { up: false, down: false, left: false, right: false },
+    npcs: ZONE_NPCS[zone.id] ?? [],
+    chestOpened: false,
   };
 
   // --- 不规则房间位置：有机扩张算法 ---
@@ -124,6 +134,8 @@ export function generateDungeon(level: number): Dungeon {
           gridX: nx, gridY: ny, type: 'normal', content: 'empty',
           cleared: true, explored: false, enemyCount: 0,
           doors: { up: false, down: false, left: false, right: false },
+          npcs: [],
+          chestOpened: false,
         };
         placed.push({ x: nx, y: ny });
         frontier.push({ x: nx, y: ny });
@@ -189,14 +201,23 @@ export function generateDungeon(level: number): Dungeon {
   );
 
   for (let i = 0; i < numExits; i++) {
-    grid[sorted[i].y][sorted[i].x]!.type = 'exit';
+    const exitRoom = grid[sorted[i].y][sorted[i].x]!;
+    if (bossLevel) {
+      // BOSS 层：出口房间即为 BOSS 房
+      exitRoom.type = 'boss';
+      exitRoom.content = 'boss';
+      exitRoom.cleared = false;
+      exitRoom.enemyCount = 1;
+    } else {
+      exitRoom.type = 'exit';
+    }
   }
 
   const exitX = sorted[0]?.x ?? startX;
   const exitY = sorted[0]?.y ?? startY;
 
   const contentRooms = reachableRooms.filter(
-    ({ x, y }) => grid[y][x]?.type !== 'exit'
+    ({ x, y }) => grid[y][x]?.type !== 'exit' && grid[y][x]?.type !== 'boss'
   );
   const shuffled = shuffle(contentRooms);
   const enemyBase = 1 + Math.floor(level / 2);

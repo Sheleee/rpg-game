@@ -1,24 +1,35 @@
 import { Character } from '../core/Character';
+import { QuestState } from '../core/Quests';
+import { ZoneId } from '../core/Regions';
 
 export interface SaveData {
-  version: number;
+  /** 存档版本（由 saveGame 填充） */
+  version?: number;
   character: Character;
-  timestamp: number;
-  playTime: number;
+  /** 任务进度 */
+  questStates: QuestState[];
+  /** 当前地下城层数 */
+  dungeonLevel: number;
+  /** 当前所在区域 */
+  zoneId: ZoneId;
+  /** 已完成的剧情事件（预留） */
+  completedEvents: string[];
+  /** 保存时间戳（由 saveGame 填充） */
+  timestamp?: number;
+  playTime?: number;
 }
 
 const SAVE_KEY = 'rpg-game-save';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 
-export function saveGame(character: Character, playTime: number = 0): boolean {
+export function saveGame(data: SaveData): boolean {
   try {
-    const data: SaveData = {
+    const payload: SaveData = {
+      ...data,
       version: SAVE_VERSION,
-      character,
       timestamp: Date.now(),
-      playTime,
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     return true;
   } catch (error) {
     console.error('Failed to save game:', error);
@@ -32,12 +43,12 @@ export function loadGame(): SaveData | null {
     if (!raw) return null;
 
     const data: SaveData = JSON.parse(raw);
-    
+
     // Version migration if needed
-    if (data.version < SAVE_VERSION) {
+    if ((data.version ?? 0) < SAVE_VERSION) {
       return migrateSaveData(data);
     }
-    
+
     return data;
   } catch (error) {
     console.error('Failed to load game:', error);
@@ -54,9 +65,18 @@ export function deleteSave(): void {
 }
 
 function migrateSaveData(data: SaveData): SaveData {
-  // Future version migrations go here
+  const char = data.character;
+  // 旧存档补充新增字段
+  if (char.gold === undefined) char.gold = 0;
+  if (char.jobName === undefined) char.jobName = null;
+  if (char.jobBonus === undefined) char.jobBonus = {};
   return {
     ...data,
     version: SAVE_VERSION,
+    character: char,
+    questStates: data.questStates ?? [],
+    dungeonLevel: data.dungeonLevel ?? 1,
+    zoneId: data.zoneId ?? 'village',
+    completedEvents: data.completedEvents ?? [],
   };
 }

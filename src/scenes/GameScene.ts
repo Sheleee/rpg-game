@@ -1,25 +1,34 @@
 import Phaser from 'phaser';
 import {
   Character, createCharacter, getCharacterStats, gainExp, equipItem,
+  addGold, applyJobChange,
 } from '../core/Character';
 import { Stats, addStats } from '../core/Stats';
-import { saveGame } from '../core/SaveSystem';
+import { loadGame, saveGame } from '../core/SaveSystem';
 import {
   generateDungeon, getRoom, Dungeon, RoomData,
   ROOM_W, ROOM_H, roomCenterX, roomCenterY,
 } from '../systems/DungeonManager';
-import { createEnemy, rollDrop } from '../core/Enemy';
+import { createEnemy, rollDrop, isBossName } from '../core/Enemy';
+import { zoneForLevel, ZoneConfig, isFinalBossLevel, ZONES } from '../core/Regions';
+import { QuestManager, questReward, getQuestTitle } from '../core/Quests';
+import { generateShopStock, buyItem, ShopItem } from '../core/Shop';
 import { HUDScene } from './HUDScene';
 import { InputSystem } from '../systems/InputSystem';
 import { VirtualJoystick } from '../ui/VirtualJoystick';
 import { AttackButton } from '../ui/AttackButton';
 import { LevelUpReward } from '../ui/LevelUpChoice';
+import { DialoguePanel } from '../ui/DialoguePanel';
+import { QuestLogPanel } from '../ui/QuestLogPanel';
+import { ShopPanel } from '../ui/ShopPanel';
+import { JobChangePanel } from '../ui/JobChangePanel';
 import { Equipment } from '../core/Equipment';
+import { DIALOGS, NpcType, NPCS, npcPrompt } from '../data/dialogs';
+import { AudioManager } from '../systems/AudioManager';
 
 const TILE = 32;
 const COLS = ROOM_W / TILE;
 const ROWS = ROOM_H / TILE;
-const DOOR_W = TILE * 2;
 const HALF_COLS = Math.floor(COLS / 2);
 const HALF_ROWS = Math.floor(ROWS / 2);
 const CORRIDOR_TILES = 4;
@@ -27,7 +36,18 @@ const CORRIDOR_LEN = CORRIDOR_TILES * TILE;
 
 interface RoomEnemy {
   sprite: Phaser.Physics.Arcade.Sprite;
-  data: { name: string; level: number; currentHp: number; maxHp: number; attackDamage: number; defense: number; expReward: number };
+  data: { name: string; level: number; currentHp: number; maxHp: number; attackDamage: number; defense: number; expReward: number; goldReward: number; isBoss: boolean };
+}
+
+interface RoomNpc {
+  sprite: Phaser.GameObjects.Sprite;
+  type: NpcType;
+}
+
+export interface GameSceneData {
+  classType?: 'warrior' | 'mage' | 'thief';
+  /** 读档继续 */
+  load?: boolean;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -40,9 +60,16 @@ export class GameScene extends Phaser.Scene {
   private curX = 0;
   private curY = 0;
   private roomEnemies: RoomEnemy[] = [];
+  private roomNpcs: RoomNpc[] = [];
   private chestSprite: Phaser.Physics.Arcade.Sprite | null = null;
   private exitSprite: Phaser.GameObjects.Sprite | null = null;
   private doorArrows: Phaser.GameObjects.Text[] = [];
+  private npcPromptText: Phaser.GameObjects.Text | null = null;
+  private nearbyNpc: RoomNpc | null = null;
+
+  private bossHpBg: Phaser.GameObjects.Graphics | null = null;
+  private bossHpFill: Phaser.GameObjects.Graphics | null = null;
+  private bossHpText: Phaser.GameObjects.Text | null = null;
 
   private inputSystem!: InputSystem;
   private joystick: VirtualJoystick | null = null;
@@ -62,16 +89,51 @@ export class GameScene extends Phaser.Scene {
   private corridorDir: string | null = null;
   private corridorTarget: { x: number; y: number } | null = null;
 
+  /** 当前地下城层数 */
+  private dungeonLevel = 1;
+
+  /** 物理碰撞器（进房时销毁重建，防泄漏） */
+  private colliders: Phaser.Physics.Arcade.Collider[] = [];
+  /** 房间附属文本（随房间清理） */
+  private roomTexts: Phaser.GameObjects.Text[] = [];
+
+  // ---- 新系统状态 ----
+  private questManager!: QuestManager;
+  private dialogue!: DialoguePanel;
+  private questLog!: QuestLogPanel;
+  private shopPanel!: ShopPanel;
+  private jobChange!: JobChangePanel;
+  private zone!: ZoneConfig;
+  private shopStock: ShopItem[] = [];
+  private audioUnlocked = false;
+
   constructor() {
     super({ key: 'GameScene' });
   }
 
-  create(data?: { classType?: string }): void {
-    const cls = (data?.classType as 'warrior' | 'mage' | 'thief') || 'warrior';
-    this.character = createCharacter('勇者', cls);
+  create(data?: GameSceneData): void {
+    // 初始化角色 / 存档
+    if (data?.load) {
+      const save = loadGame();
+      if (save) {
+        this.character = save.character;
+        this.questManager = new QuestManager(save.questStates);
+        this.dungeonLevel = save.dungeonLevel;
+        // 区域以存档 zoneId 为准（与层数推导不一致时优先 zoneId）
+        this.zone = ZONES.find(z => z.id === save.zoneId) ?? zoneForLevel(save.dungeonLevel);
+      } else {
+        this.newGame(data);
+      }
+    } else {
+      this.newGame(data);
+    }
+
+    // zone 兜底：若上面未赋值（newGame 分支），由层数推导
+    if (!this.zone) this.zone = zoneForLevel(this.dungeonLevel);
     this.bonusStats = { hp: 0, mp: 0, attack: 0, defense: 0, speed: 0, critRate: 0, critDamage: 0 };
     this.corridorDir = null;
     this.corridorTarget = null;
+    this.nearbyNpc = null;
 
     this.walls = this.physics.add.staticGroup();
     this.groundLayer = this.add.group();
@@ -81,7 +143,6 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, ROOM_W, ROOM_H);
 
     this.inputSystem = new InputSystem(this);
-    this.physics.add.collider(this.player, this.walls);
 
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
     this.cameras.main.setBounds(0, 0, ROOM_W, ROOM_H);
@@ -97,6 +158,15 @@ export class GameScene extends Phaser.Scene {
     this.fogCanvas.height = gh;
     this.fogTexture = this.textures.addCanvas('fog_tex', this.fogCanvas)!;
     this.fogImage = this.add.image(0, 0, 'fog_tex').setOrigin(0, 0).setDepth(200).setScrollFactor(0);
+
+    // UI 面板
+    this.dialogue = new DialoguePanel(this);
+    this.questLog = new QuestLogPanel(this);
+    this.shopPanel = new ShopPanel(this);
+    this.jobChange = new JobChangePanel(this);
+
+    this.dialogue.onOption = (opt) => this.handleDialogOption(opt);
+    this.shopPanel.onBuy = (item) => this.handleBuy(item);
 
     const eff = this.getEffectiveStats();
     this.scene.launch('HUDScene', {
@@ -120,22 +190,60 @@ export class GameScene extends Phaser.Scene {
       this.input.keyboard.on('keydown-ESC', () => {
         if (this.isTransitioning) return;
         const hud = this.scene.get('HUDScene') as HUDScene;
+        // 优先关闭各面板
+        if (this.shopPanel.isVisible) { this.shopPanel.hide(); return; }
+        if (this.questLog.isVisible) { this.questLog.hide(); return; }
+        if (this.jobChange.isVisible) { this.jobChange.hide(); return; }
+        if (this.dialogue.isVisible) { this.dialogue.hide(); return; }
         if (hud.inventory.isVisible) {
           hud.inventory.hide();
           return;
         }
-        saveGame(this.character);
+        this.autoSave();
         this.showFloatingText('游戏已保存！');
       });
       this.input.keyboard.on('keydown-I', () => {
+        if (this.dialogue.isVisible || this.shopPanel.isVisible || this.jobChange.isVisible) return;
         const hud = this.scene.get('HUDScene') as HUDScene;
         hud.inventory.setCharacter(this.character);
         hud.inventory.toggle();
+        AudioManager.playSfx('ui');
+      });
+      this.input.keyboard.on('keydown-J', () => {
+        if (this.dialogue.isVisible || this.shopPanel.isVisible || this.jobChange.isVisible) return;
+        this.questLog.toggle(this.questManager);
+        AudioManager.playSfx('ui');
+      });
+      this.input.keyboard.on('keydown-E', () => this.tryInteract());
+      this.input.keyboard.on('keydown-M', () => {
+        const next = !AudioManager.isMuted();
+        AudioManager.setMuted(next);
+        this.showFloatingText(next ? '静音 ON' : '静音 OFF');
       });
     }
 
-    this.dungeon = generateDungeon(1);
+    // 首次交互解锁音频
+    this.input.once('pointerdown', () => this.unlockAudio());
+    this.input.keyboard?.once('keydown', () => this.unlockAudio());
+
+    // 恢复区域 BGM
+    AudioManager.startBgm(this.zone.bgmTempo, this.zone.bgmRoot);
+
+    this.dungeon = generateDungeon(this.dungeonLevel, this.zone);
     this.enterRoom(this.dungeon.startX, this.dungeon.startY);
+  }
+
+  private newGame(data?: GameSceneData): void {
+    const cls = (data?.classType as 'warrior' | 'mage' | 'thief') || 'warrior';
+    this.character = createCharacter('勇者', cls);
+    this.questManager = new QuestManager();
+    this.dungeonLevel = 1;
+  }
+
+  private unlockAudio(): void {
+    if (this.audioUnlocked) return;
+    this.audioUnlocked = true;
+    AudioManager.unlock();
   }
 
   update(): void {
@@ -151,12 +259,18 @@ export class GameScene extends Phaser.Scene {
     }
     this.checkChestPickup();
     this.checkExit();
+    this.checkNearbyNpc();
     this.updateFog();
     (this.scene.get('HUDScene') as HUDScene).updateMiniMap(this.dungeon, this.curX, this.curY, this.player.x, this.player.y);
   }
 
   private handleMovement(): void {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
+    // 面板打开时禁止移动（防带面板走出房间）
+    if (this.dialogue.isVisible || this.shopPanel.isVisible || this.jobChange.isVisible || this.questLog.isVisible) {
+      body.setVelocity(0);
+      return;
+    }
     const input = this.inputSystem.getMovement();
     body.setVelocity(input.moveX * 160, input.moveY * 160);
     if (input.moveX !== 0) this.facingRight = input.moveX > 0;
@@ -179,9 +293,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleAttack(): void {
+    if (this.isTransitioning) return;
+    if (this.dialogue.isVisible || this.shopPanel.isVisible || this.jobChange.isVisible || this.questLog.isVisible) return;
     for (const re of this.roomEnemies) {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, re.sprite.x, re.sprite.y);
-      if (dist < 55 && re.data.currentHp > 0) {
+      const range = re.data.isBoss ? 85 : 55;
+      if (dist < range && re.data.currentHp > 0) {
         const atk = this.getEffectiveStats();
         const base = Math.max(1, atk.attack - re.data.defense);
         const isCrit = Math.random() < atk.critRate;
@@ -197,8 +314,10 @@ export class GameScene extends Phaser.Scene {
           this.playWarriorAttack(this.player.x, this.player.y, re.sprite.x, re.sprite.y);
         }
         this.playHitFlash(re.sprite);
+        AudioManager.playSfx('attack');
 
         this.showDamageNumber(re.sprite.x, re.sprite.y - 20, dmg, isCrit);
+        if (re.data.isBoss) this.updateBossHp();
         if (re.data.currentHp <= 0) this.onEnemyKilled(re);
         return;
       }
@@ -282,7 +401,23 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(150, () => { if (sprite.active) sprite.clearTint(); });
   }
 
+  /** 注册碰撞器并纳入管理（进房时统一销毁） */
+  private addCollider(
+    a: Phaser.Types.Physics.Arcade.ArcadeColliderType,
+    b: Phaser.Types.Physics.Arcade.ArcadeColliderType,
+  ): void {
+    this.colliders.push(this.physics.add.collider(a, b));
+  }
+
+  /** 创建房间附属文本（随房间清理） */
+  private addRoomText(x: number, y: number, text: string, style: Phaser.Types.GameObjects.Text.TextStyle): Phaser.GameObjects.Text {
+    const t = this.add.text(x, y, text, style);
+    this.roomTexts.push(t);
+    return t;
+  }
+
   private onEnemyKilled(re: RoomEnemy): void {
+    // 掉落装备
     const drop = rollDrop(re.data.name, re.data.level);
     if (drop) {
       if (!this.character.equipments[drop.slot]) {
@@ -293,25 +428,81 @@ export class GameScene extends Phaser.Scene {
         this.showEquipmentFloatingText(drop, false);
       }
     }
+
+    // 金币掉落
+    if (re.data.goldReward > 0) {
+      this.character = addGold(this.character, re.data.goldReward);
+      this.showFloatingText(`+${re.data.goldReward} 金币`);
+      AudioManager.playSfx('gold');
+    }
+
+    // 经验（敌人）
     const { character, leveledUp } = gainExp(this.character, re.data.expReward);
     this.character = character;
-    this.updateHUD();
-    if (leveledUp) {
-      this.isTransitioning = true;
-      const hud = this.scene.get('HUDScene') as HUDScene;
-      hud.levelUpUI.show(this.character.level, (reward) => {
-        this.applyLevelUpReward(reward);
-        this.isTransitioning = false;
-        this.updateHUD();
-      });
+
+    // 任务进度（击杀 / BOSS）——任务奖励经验可能再次升级
+    const completed = this.questManager.recordKill(re.data.name, re.data.isBoss);
+    const questLeveled = this.settleQuests(completed);
+
+    // 统一处理升级奖励（只弹一次 UI）
+    if (leveledUp || questLeveled) {
+      this.showLevelUpUI();
     }
+    this.updateHUD();
+
+    // BOSS 击败
+    if (re.data.isBoss) {
+      this.hideBossHp();
+      this.showFloatingText(`✦ 击败 BOSS: ${re.data.name}！`);
+      AudioManager.playSfx('boss');
+      const room = getRoom(this.dungeon, this.curX, this.curY);
+      if (room) {
+        room.cleared = true;
+        // 出口传送门由 renderRoom 依据房间状态重建（离开再进入也能推进）
+        this.exitSprite = this.add.sprite(this.curX * ROOM_W + ROOM_W / 2, this.curY * ROOM_H + ROOM_H / 2, 'exit');
+        this.addRoomText(this.curX * ROOM_W + ROOM_W / 2, this.curY * ROOM_H + ROOM_H / 2 - 30, '▼ 前往下一区域', {
+          font: 'bold 16px monospace', color: '#44ffff',
+        }).setOrigin(0.5).setDepth(50);
+      }
+    } else {
+      AudioManager.playSfx('hit');
+    }
+
     re.sprite.destroy();
     this.roomEnemies = this.roomEnemies.filter(e => e !== re);
     const room = getRoom(this.dungeon, this.curX, this.curY);
-    if (room && room.enemyCount > 0 && this.roomEnemies.length === 0) {
+    if (room && room.content !== 'boss' && room.enemyCount > 0 && this.roomEnemies.length === 0) {
       room.cleared = true;
       this.showFloatingText('房间已清除！');
     }
+  }
+
+  /** 弹出升级奖励选择（若等级已提升） */
+  private showLevelUpUI(): void {
+    AudioManager.playSfx('levelup');
+    this.isTransitioning = true;
+    const hud = this.scene.get('HUDScene') as HUDScene;
+    hud.levelUpUI.show(this.character.level, (reward) => {
+      this.applyLevelUpReward(reward);
+      this.isTransitioning = false;
+      this.updateHUD();
+      this.checkJobChange();
+    });
+  }
+
+  /** 结算完成任务奖励（经验/金币），返回是否因此升级 */
+  private settleQuests(completedIds: string[]): boolean {
+    let leveledUp = false;
+    for (const id of completedIds) {
+      const reward = questReward(id);
+      this.character = addGold(this.character, reward.gold);
+      const { character, leveledUp: didLevel } = gainExp(this.character, reward.exp);
+      this.character = character;
+      if (didLevel) leveledUp = true;
+      this.showFloatingText(`任务完成: ${getQuestTitle(id)} (+${reward.exp}经验 +${reward.gold}金币)`);
+      AudioManager.playSfx('quest');
+    }
+    return leveledUp;
   }
 
   private applyLevelUpReward(reward: LevelUpReward): void {
@@ -325,6 +516,23 @@ export class GameScene extends Phaser.Scene {
       for (const eq of result.inventory) this.character.inventory.push(eq);
     }
     this.showFloatingText(`获得: ${reward.label}`);
+  }
+
+  /** 转职检查：达到等级且未转职时弹出转职面板 */
+  private checkJobChange(): void {
+    if (this.character.jobName) return;
+    if (this.character.level < 10) return;
+    if (this.jobChange.isVisible || this.dialogue.isVisible) return;
+    this.time.delayedCall(400, () => {
+      if (this.character.level >= 10 && !this.character.jobName && !this.dialogue.isVisible && !this.jobChange.isVisible) {
+        this.jobChange.show(this.character, (jobName) => {
+          this.character = applyJobChange(this.character, jobName);
+          AudioManager.playSfx('levelup');
+          this.showFloatingText(`✦ 转职成功: ${jobName}！`);
+          this.updateHUD();
+        });
+      }
+    });
   }
 
   private getEffectiveStats(): Stats {
@@ -348,16 +556,105 @@ export class GameScene extends Phaser.Scene {
           this.lastHitTime = now;
           this.character.currentHp = Math.max(0, this.character.currentHp - re.data.attackDamage);
           this.updateHUD();
+          AudioManager.playSfx('hit');
           this.player.setTint(0xff0000);
           this.time.delayedCall(200, () => this.player.clearTint());
           if (this.character.currentHp <= 0) {
+            AudioManager.playSfx('death');
             this.showFloatingText('阵亡！');
-            this.time.delayedCall(1000, () => this.scene.restart());
+            this.time.delayedCall(1000, () => this.scene.restart({ load: true }));
           }
         }
       }
     }
   }
+
+  // ---- NPC 交互 ----
+
+  private checkNearbyNpc(): void {
+    let nearest: RoomNpc | null = null;
+    let bestDist = 70;
+    for (const npc of this.roomNpcs) {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.sprite.x, npc.sprite.y);
+      if (d < bestDist) {
+        bestDist = d;
+        nearest = npc;
+      }
+    }
+    this.nearbyNpc = nearest;
+    if (nearest) {
+      if (!this.npcPromptText) {
+        this.npcPromptText = this.add.text(nearest.sprite.x, nearest.sprite.y - 46, '', {
+          font: 'bold 12px monospace', color: '#ffff88',
+        }).setOrigin(0.5).setDepth(80);
+      }
+      this.npcPromptText.setPosition(nearest.sprite.x, nearest.sprite.y - 46);
+      this.npcPromptText.setText(npcPrompt(NPCS[nearest.type]));
+      this.npcPromptText.setVisible(true);
+    } else if (this.npcPromptText) {
+      this.npcPromptText.setVisible(false);
+    }
+  }
+
+  private tryInteract(): void {
+    if (this.isTransitioning) return;
+    if (this.dialogue.isVisible) return;
+    if (!this.nearbyNpc) return;
+    this.dialogue.show(DIALOGS[this.nearbyNpc.type]);
+    AudioManager.playSfx('dialogue');
+    if (this.nearbyNpc.type === 'merchant') AudioManager.playSfx('shop');
+  }
+
+  private handleDialogOption(opt: { label: string; action?: string; data?: string }): void {
+    switch (opt.action) {
+      case 'accept_quest': {
+        const id = opt.data;
+        if (!id) break;
+        if (this.questManager.canAccept(id, this.character.level)) {
+          this.questManager.accept(id, this.character.level);
+          this.showFloatingText(`已接受任务: ${getQuestTitle(id)}`);
+          AudioManager.playSfx('quest');
+        } else if (this.questManager.isActive(id)) {
+          this.showFloatingText('该任务进行中');
+        } else if (this.questManager.isCompleted(id)) {
+          this.showFloatingText('该任务已完成');
+        } else {
+          this.showFloatingText('前置任务未完成，无法接取');
+        }
+        break;
+      }
+      case 'open_shop': {
+        this.shopStock = generateShopStock(this.dungeonLevel);
+        this.shopPanel.show(this.shopStock, this.character);
+        AudioManager.playSfx('shop');
+        break;
+      }
+      case 'job_change':
+        this.checkJobChange();
+        break;
+      case 'complete':
+      default:
+        break;
+    }
+  }
+
+  private handleBuy(item: ShopItem): boolean {
+    const result = buyItem(this.character, item);
+    if (result) {
+      this.character = result;
+      // 刷新面板（传入最新角色引用，金币实时更新）
+      this.shopPanel.refresh(this.character);
+      this.showFloatingText(`购买成功: [${item.equipment.name}]`);
+      AudioManager.playSfx('buy');
+      this.updateHUD();
+      return true;
+    }
+    this.showFloatingText('金币不足！');
+    AudioManager.playSfx('ui');
+    return false;
+  }
+
+  // ---- 房间与层 ----
 
   private enterRoom(x: number, y: number, entryDir?: string): void {
     const room = getRoom(this.dungeon, x, y);
@@ -441,26 +738,69 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    this.physics.add.collider(this.player, this.walls);
+    this.addCollider(this.player, this.walls);
+
+    // 区域氛围（地板色调）
+    if (this.zone.id !== 'village') {
+      const tintImg = this.add.rectangle(ox + ROOM_W / 2, oy + ROOM_H / 2, ROOM_W, ROOM_H, this.zone.tint, 0.06)
+        .setDepth(-0.5).setOrigin(0.5);
+      this.groundLayer.add(tintImg);
+    }
 
     if ((room.content === 'enemies' || room.content === 'guarded_chest') && !room.cleared) {
       this.spawnRoomEnemies(room, ox, oy);
     }
 
-    if (room.content === 'chest' || (room.content === 'guarded_chest' && room.cleared)) {
+    if (room.content === 'boss' && !room.cleared) {
+      this.spawnBoss(room, ox, oy);
+    }
+
+    if ((room.content === 'chest' && !room.chestOpened) || (room.content === 'guarded_chest' && room.cleared && !room.chestOpened)) {
       this.chestSprite = this.physics.add.sprite(ox + ROOM_W / 2, oy + ROOM_H / 2 + 60, 'chest');
       this.chestSprite.setImmovable(true);
-      this.physics.add.collider(this.player, this.chestSprite);
+      this.addCollider(this.player, this.chestSprite);
     }
 
     if (room.type === 'exit') {
       this.exitSprite = this.add.sprite(ox + ROOM_W / 2, oy + ROOM_H / 2, 'exit');
-      this.add.text(ox + ROOM_W / 2, oy + ROOM_H / 2 - 30, '▼', {
-        font: 'bold 20px monospace', color: '#44ffff',
+      this.addRoomText(ox + ROOM_W / 2, oy + ROOM_H / 2 - 30, '▼ 前往下一层', {
+        font: 'bold 14px monospace', color: '#44ffff',
       }).setOrigin(0.5).setDepth(50);
     }
 
+    // BOSS 房：击败后出口由房间状态驱动（离开再进入依然可推进）
+    if (room.type === 'boss' && room.cleared && !this.exitSprite) {
+      this.exitSprite = this.add.sprite(ox + ROOM_W / 2, oy + ROOM_H / 2, 'exit');
+      this.addRoomText(ox + ROOM_W / 2, oy + ROOM_H / 2 - 30, '▼ 前往下一区域', {
+        font: 'bold 16px monospace', color: '#44ffff',
+      }).setOrigin(0.5).setDepth(50);
+    }
+
+    // NPC（start 房间）
+    for (const npcType of room.npcs) {
+      this.spawnNpc(npcType, ox, oy);
+    }
+
     this.createDoorArrows(room, ox, oy);
+  }
+
+  private spawnNpc(npcType: NpcType, ox: number, oy: number): void {
+    const isMerchant = npcType === 'merchant';
+    const idx = this.roomNpcs.length;
+    const x = ox + ROOM_W / 2 + (idx === 0 ? -140 : 140);
+    const y = oy + ROOM_H / 2 + 90;
+    const sprite = this.add.sprite(x, y, isMerchant ? 'merchant' : 'npc').setDepth(2);
+    // 用 tint 区分不同 NPC
+    const tints: Partial<Record<NpcType, number>> = {
+      village_chief: 0xffffff, hunter: 0x88cc66, trader: 0xddbb66, sage: 0x99ccff,
+    };
+    if (!isMerchant && tints[npcType]) sprite.setTint(tints[npcType]!);
+    this.roomNpcs.push({ sprite, type: npcType });
+
+    // NPC 名字
+    this.addRoomText(x, y - 34, NPCS[npcType].name, {
+      font: 'bold 11px monospace', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(2);
   }
 
   private spawnRoomEnemies(room: RoomData, ox: number, oy: number): void {
@@ -469,9 +809,59 @@ export class GameScene extends Phaser.Scene {
       const y = oy + 60 + Math.random() * (ROOM_H - 120);
       const sprite = this.physics.add.sprite(x, y, 'enemy');
       sprite.setCollideWorldBounds(true);
-      this.roomEnemies.push({ sprite, data: createEnemy('哥布林', this.dungeon.level) });
-      this.physics.add.collider(sprite, this.walls);
+      const pool = this.zone.enemyPool;
+      const enemyName = pool[Math.floor(Math.random() * pool.length)];
+      this.roomEnemies.push({ sprite, data: createEnemy(enemyName, this.dungeonLevel) });
+      this.addCollider(sprite, this.walls);
     }
+  }
+
+  private spawnBoss(room: RoomData, ox: number, oy: number): void {
+    const x = ox + ROOM_W / 2;
+    const y = oy + ROOM_H / 2 + 20;
+    const sprite = this.physics.add.sprite(x, y, 'boss');
+    sprite.setCollideWorldBounds(true);
+    sprite.setScale(1.8);
+    this.roomEnemies.push({ sprite, data: createEnemy(this.zone.bossName, this.dungeonLevel) });
+    this.addCollider(sprite, this.walls);
+
+    // BOSS 血条（屏幕顶部）
+    const gw = Number(this.game.config.width);
+    this.bossHpBg = this.add.graphics().setDepth(210).setScrollFactor(0);
+    this.bossHpFill = this.add.graphics().setDepth(211).setScrollFactor(0);
+    this.bossHpText = this.add.text(gw / 2, 8, this.zone.bossName, {
+      font: 'bold 14px monospace', color: '#ff6666',
+    }).setOrigin(0.5, 0).setDepth(212).setScrollFactor(0);
+    this.updateBossHp();
+  }
+
+  private updateBossHp(): void {
+    const boss = this.roomEnemies.find(e => e.data.isBoss && e.data.currentHp > 0);
+    if (!boss) return;
+    const gw = Number(this.game.config.width);
+    const bw = 300, bx = (gw - bw) / 2, by = 28, bh = 10;
+    const pct = Math.max(0, boss.data.currentHp / boss.data.maxHp);
+
+    this.bossHpBg?.clear();
+    this.bossHpBg?.fillStyle(0x111111, 0.9);
+    this.bossHpBg?.fillRect(bx, by, bw, bh);
+    this.bossHpBg?.lineStyle(1, 0x884444, 1);
+    this.bossHpBg?.strokeRect(bx, by, bw, bh);
+
+    this.bossHpFill?.clear();
+    this.bossHpFill?.fillStyle(0xcc2222, 1);
+    this.bossHpFill?.fillRect(bx + 1, by + 1, Math.round((bw - 2) * pct), bh - 2);
+
+    this.bossHpText?.setText(`${boss.data.name}  ${boss.data.currentHp}/${boss.data.maxHp}`);
+  }
+
+  private hideBossHp(): void {
+    this.bossHpBg?.destroy();
+    this.bossHpFill?.destroy();
+    this.bossHpText?.destroy();
+    this.bossHpBg = null;
+    this.bossHpFill = null;
+    this.bossHpText = null;
   }
 
   private createDoorArrows(room: RoomData, ox: number, oy: number): void {
@@ -493,12 +883,22 @@ export class GameScene extends Phaser.Scene {
   private clearRoom(): void {
     this.roomEnemies.forEach(e => e.sprite.destroy());
     this.roomEnemies = [];
+    this.roomNpcs.forEach(n => n.sprite.destroy());
+    this.roomNpcs = [];
     if (this.chestSprite) { this.chestSprite.destroy(); this.chestSprite = null; }
     if (this.exitSprite) { this.exitSprite.destroy(); this.exitSprite = null; }
+    this.hideBossHp();
     this.walls.clear(true, true);
     this.groundLayer.clear(true, true);
     this.doorArrows.forEach(t => t.destroy());
     this.doorArrows = [];
+    this.roomTexts.forEach(t => t.destroy());
+    this.roomTexts = [];
+    // 销毁本房间注册的碰撞器，防止跨房间累积
+    this.colliders.forEach(c => c.destroy());
+    this.colliders = [];
+    if (this.npcPromptText) { this.npcPromptText.destroy(); this.npcPromptText = null; }
+    this.nearbyNpc = null;
   }
 
   private checkRoomTransition(): void {
@@ -615,7 +1015,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.chestSprite) return;
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.chestSprite.x, this.chestSprite.y);
     if (dist < 40) {
-      const drop = rollDrop('哥布林', this.dungeon.level) || rollDrop('骷髅', this.dungeon.level);
+      const drop = rollDrop(this.zone.enemyPool[0], this.dungeonLevel) || rollDrop('骷髅', this.dungeonLevel);
       if (drop) {
         if (!this.character.equipments[drop.slot]) {
           this.character = equipItem(this.character, drop);
@@ -625,10 +1025,16 @@ export class GameScene extends Phaser.Scene {
           this.showEquipmentFloatingText(drop, false);
         }
       } else {
-        this.showFloatingText('宝箱是空的...');
+        const gold = 10 + Math.floor(Math.random() * 20);
+        this.character = addGold(this.character, gold);
+        this.showFloatingText(`宝箱: +${gold} 金币`);
+        AudioManager.playSfx('pickup');
       }
       this.chestSprite.destroy();
       this.chestSprite = null;
+      // 标记已开启，防止进出房间无限刷新
+      const room = getRoom(this.dungeon, this.curX, this.curY);
+      if (room) room.chestOpened = true;
     }
   }
 
@@ -636,15 +1042,83 @@ export class GameScene extends Phaser.Scene {
     if (!this.exitSprite) return;
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.exitSprite.x, this.exitSprite.y);
     if (dist < 50) {
-      this.isTransitioning = true;
-      this.showFloatingText(`进入第 ${this.dungeon.level + 1} 层...`);
-      this.time.delayedCall(800, () => {
-        this.clearRoom();
-        this.dungeon = generateDungeon(this.dungeon.level + 1);
-        this.enterRoom(this.dungeon.startX, this.dungeon.startY);
-        this.isTransitioning = false;
-      });
+      this.advanceLevel();
     }
+  }
+
+  /** 进入下一层（区域切换 / BOSS 层判定 / 通关结局） */
+  private advanceLevel(): void {
+    this.isTransitioning = true;
+
+    // 最终 BOSS（冰霜巨龙）已被击败 → 通关结局
+    if (isFinalBossLevel(this.dungeonLevel)) {
+      this.showVictory();
+      return;
+    }
+
+    const nextLevel = this.dungeonLevel + 1;
+    const nextZone = zoneForLevel(nextLevel);
+    const zoneChanged = nextZone.id !== this.zone.id;
+
+    if (zoneChanged) {
+      this.showFloatingText(`✦ 进入新区域: ${nextZone.name}！`);
+    } else {
+      this.showFloatingText(`进入第 ${nextLevel} 层...`);
+    }
+
+    this.time.delayedCall(800, () => {
+      // 任务：到达区域（传送完成后结算，避免升级 UI 与层切换并发）
+      const completed = this.questManager.recordReachZone(nextZone.id);
+      const leveled = this.settleQuests(completed);
+
+      this.dungeonLevel = nextLevel;
+      this.zone = nextZone;
+      AudioManager.startBgm(this.zone.bgmTempo, this.zone.bgmRoot);
+      this.clearRoom();
+      this.dungeon = generateDungeon(this.dungeonLevel, this.zone);
+      this.enterRoom(this.dungeon.startX, this.dungeon.startY);
+      this.autoSave();
+      // 升级面板在 enterRoom 的相机 pan 完成后弹出，避免 isTransitioning 被 pan 回调覆盖
+      if (leveled) {
+        this.time.delayedCall(300, () => this.showLevelUpUI());
+      }
+    });
+  }
+
+  /** 通关结算画面 */
+  private showVictory(): void {
+    AudioManager.stopBgm();
+    AudioManager.playSfx('levelup');
+    this.add.rectangle(400, 300, 800, 600, 0x000000, 0.9).setDepth(600).setScrollFactor(0);
+    this.add.text(400, 200, '🏆 通关！', {
+      font: 'bold 44px monospace', color: '#ffcc44',
+    }).setOrigin(0.5).setDepth(601).setScrollFactor(0);
+    this.add.text(400, 270, '你击败了冰霜巨龙，成为大陆的英雄！', {
+      font: '18px monospace', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(601).setScrollFactor(0);
+    const job = this.character.jobName ? ` · ${this.character.jobName}` : '';
+    this.add.text(400, 310, `最终等级 Lv.${this.character.level} · ${this.character.classType}${job} · ${this.character.gold} 金币`, {
+      font: '15px monospace', color: '#88ccff',
+    }).setOrigin(0.5).setDepth(601).setScrollFactor(0);
+    this.add.text(400, 380, '3 秒后返回标题画面...', {
+      font: '13px monospace', color: '#aaaaaa',
+    }).setOrigin(0.5).setDepth(601).setScrollFactor(0);
+    this.time.delayedCall(3000, () => {
+      this.scene.stop('HUDScene');
+      this.scene.start('ClassSelectScene');
+    });
+  }
+
+  /** 自动 / 手动存档 */
+  private autoSave(): void {
+    saveGame({
+      character: this.character,
+      questStates: this.questManager.serialize(),
+      dungeonLevel: this.dungeonLevel,
+      zoneId: this.zone.id,
+      completedEvents: [],
+      playTime: 0,
+    });
   }
 
   private showDamageNumber(x: number, y: number, damage: number, isCrit: boolean): void {
@@ -682,6 +1156,8 @@ export class GameScene extends Phaser.Scene {
     const stats = this.getEffectiveStats();
     hudScene.updateStats(this.character.currentHp, stats.hp, this.character.currentMp, stats.mp);
     hudScene.updateLevel(this.character.level, this.character.exp, 50 + this.character.level * 30);
+    hudScene.updateGold(this.character.gold);
+    hudScene.updateZone(this.zone.name, this.dungeonLevel, this.character.jobName);
   }
 
   private updateFog(): void {

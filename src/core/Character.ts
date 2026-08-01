@@ -57,6 +57,12 @@ export interface Character {
   currentMp: number;
   equipments: Partial<Record<EquipmentSlot, Equipment>>;
   inventory: Equipment[];
+  /** 金币（商店货币） */
+  gold: number;
+  /** 已转职的终职名称（未转职为 null） */
+  jobName: string | null;
+  /** 转职属性加成（由 applyJobChange 写入） */
+  jobBonus: Partial<Stats>;
 }
 
 export function createCharacter(name: string, classType: ClassType): Character {
@@ -67,6 +73,27 @@ export function createCharacter(name: string, classType: ClassType): Character {
     currentMp: c.baseStats.mp ?? 50,
     equipments: {},
     inventory: [],
+    gold: 0,
+    jobName: null,
+    jobBonus: {},
+  };
+}
+
+/** 增加 / 扣除金币（扣除时保证不为负） */
+export function addGold(character: Character, amount: number): Character {
+  return { ...character, gold: Math.max(0, character.gold + amount) };
+}
+
+/** 转职：设置终职名称并应用职业属性加成（仅一次） */
+export function applyJobChange(character: Character, jobName: string): Character {
+  if (character.jobName) return character;
+  // 从职业定义中查找对应终职，应用其属性加成
+  const c = CHARACTER_CLASSES[character.classType];
+  const job = c.jobChanges.find(j => j.name === jobName);
+  return {
+    ...character,
+    jobName,
+    jobBonus: job?.statBonus ?? {},
   };
 }
 
@@ -81,7 +108,9 @@ export function getCharacterStats(character: Character): Stats {
   const withLevel = addStats(base, levelBonus);
   const equipped = Object.values(character.equipments).filter(Boolean) as Equipment[];
   const eqStats = calculateTotalStats(equipped);
-  return addStats(withLevel, eqStats);
+  const withEq = addStats(withLevel, eqStats);
+  // 转职加成
+  return addStats(withEq, character.jobBonus ?? {});
 }
 
 export function equipItem(character: Character, eq: Equipment): Character {
