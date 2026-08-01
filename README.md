@@ -123,19 +123,29 @@ npm run test:run   # 单次运行 / run once
 
 ## 路线图 / Roadmap
 
+### ✅ 已完成 / Completed
+
 - [x] 角色移动与碰撞 / character movement & collision
 - [x] 战斗系统（攻击、受伤、死亡）/ combat system
 - [x] 敌人 AI / enemy AI
 - [x] 装备系统（拾取、穿戴、属性）/ equipment system
 - [x] UI 系统（HUD、背包）/ UI system (HUD, inventory)
-- [ ] NPC 对话系统 / NPC dialogue
-- [ ] 任务系统 / quest system
-- [ ] 多区域地图切换 / multi-zone map switching
-- [ ] 存档系统 / save system
-- [ ] 音频系统 / audio system
-- [ ] 转职系统 / class advancement
-- [ ] 商店系统 / shop system
-- [ ] BOSS 战 / boss fights
+
+### 🚧 未实现目标 / Upcoming Goals
+
+> 以下功能**尚未实现**，是项目接下来的开发目标（按 `CONTEXT.md` 中的开发优先级排序）。
+> The following features are **not yet implemented** and are the project's next development goals (ordered by priority from `CONTEXT.md`).
+
+| 优先级 / Priority | 目标 / Goal | 说明 / Description |
+|---|---|---|
+| P1 | NPC 对话系统 / NPC dialogue | NPC 对话呈现剧情，支持对话选项影响剧情走向或获得不同奖励 / NPC dialogue boxes with branching options that affect the story or rewards |
+| P1 | 任务系统 / quest system | 主线 + 支线任务：接取、追踪、完成与奖励 / Main & side quests: accept, track, complete and reward |
+| P1 | 多区域地图切换 / multi-zone map switching | 传送点 / 边界触发切换区域，各区域独立怪物等级与掉落表 / Zone switching via portals or borders; per-zone monster levels and loot tables |
+| P1 | 存档系统 / save system | localStorage 自动 / 手动存档：角色状态、装备、任务进度、地图解锁 / Auto & manual save via localStorage: character state, gear, quest progress, unlocked zones |
+| P2 | 转职系统 / class advancement | 达到等级后触发转职任务，3 基础职业 → 6 终职 / Advancement quests at level thresholds, 3 base classes → 6 final classes |
+| P2 | 商店系统 / shop system | 金币购买基础装备，不同区域提供不同商品 / Buy base gear with gold; shops vary by zone |
+| P2 | BOSS 战 / boss fights | 洞穴副本、沙漠神殿、雪山龙巢等 BOSS 战 / Boss fights in caves, the desert temple, and the snow dragon's lair |
+| P3 | 音频系统 / audio system | 各区域独立 BGM + 攻击 / 受伤 / 拾取 / UI / 对话 / 升级音效 / Per-zone BGM and SFX for attack, hit, pickup, UI, dialogue and level-up |
 
 ---
 
