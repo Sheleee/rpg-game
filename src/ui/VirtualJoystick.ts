@@ -7,6 +7,7 @@ export interface JoystickState {
 }
 
 export class VirtualJoystick {
+  private scene: Phaser.Scene;
   private base: Phaser.GameObjects.Ellipse;
   private thumb: Phaser.GameObjects.Ellipse;
   private container: Phaser.GameObjects.Container;
@@ -17,6 +18,7 @@ export class VirtualJoystick {
   private pointerId = -1;
 
   constructor(scene: Phaser.Scene, x: number, y: number, baseRadius = 60, thumbRadius = 25) {
+    this.scene = scene;
     this.baseRadius = baseRadius;
     this.thumbRadius = thumbRadius;
 
@@ -28,7 +30,10 @@ export class VirtualJoystick {
     this.container.setScrollFactor(0);
 
     scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      const dist = Phaser.Math.Distance.Between(pointer.x, pointer.y, x, y);
+      const zoom = scene.cameras.main.zoom;
+      const wx = pointer.x / zoom;
+      const wy = pointer.y / zoom;
+      const dist = Phaser.Math.Distance.Between(wx, wy, x, y);
       if (dist < baseRadius * 2) {
         this.pointerId = pointer.id;
         this.state.isActive = true;
@@ -50,8 +55,11 @@ export class VirtualJoystick {
   }
 
   private updateThumb(pointerX: number, pointerY: number): void {
-    const dx = pointerX - this.container.x;
-    const dy = pointerY - this.container.y;
+    const zoom = this.scene.cameras.main.zoom;
+    const wx = pointerX / zoom;
+    const wy = pointerY / zoom;
+    const dx = wx - this.container.x;
+    const dy = wy - this.container.y;
     const dist = Math.hypot(dx, dy);
     const maxDist = this.baseRadius - this.thumbRadius;
 

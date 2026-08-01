@@ -109,11 +109,11 @@ describe('Character', () => {
       expect(character.level).toBe(1);
     });
 
-    it('should level up when exp reaches 100', () => {
+    it('should level up when exp reaches threshold', () => {
       const char = createCharacter('Hero', 'warrior');
       const { character, leveledUp } = gainExp(char, 150);
       expect(character.level).toBe(2);
-      expect(character.exp).toBe(50);
+      expect(character.exp).toBe(150 - (50 + 1 * 30));
       expect(leveledUp).toBe(true);
     });
   });

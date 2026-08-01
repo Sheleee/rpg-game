@@ -13,13 +13,7 @@ export interface Stats {
 }
 
 export const BASE_STATS: Stats = {
-  hp: 100,
-  mp: 50,
-  attack: 10,
-  defense: 5,
-  speed: 100,
-  critRate: 0.05,
-  critDamage: 1.5,
+  hp: 100, mp: 50, attack: 10, defense: 5, speed: 100, critRate: 0.05, critDamage: 1.5,
 };
 
 export function createStats(overrides: Partial<Stats> = {}): Stats {
